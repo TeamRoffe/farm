@@ -1,62 +1,100 @@
 # Api specification
+
 This document defines the endpoint responses and format
 
-## /metrics
+## /v1/categories GET
 
-Prometheus metrics endpoint https://github.com/prometheus/client_golang
+```json
+[
+  {
+    "id": 1,
+    "name": "drink"
+  },
+  {
+    "id": 2,
+    "name": "beer"
+  }
+]
+```
 
-## Api endpoints
+## /v1/drinks GET
 
-The different endpoints explained for the different components
+```json
+[
+  {
+    "id": 1,
+    "drink_name": "Rom&Rolf",
+    "category": 1,
+    "description": "För en mer traditionell fylla",
+    "url": "http://qty.se"
+  },
+  {
+    "id": 2,
+    "drink_name": "GT",
+    "category": 1,
+    "description": "För britter, med krisp",
+    "url": "http://qty.se"
+  }
+]
+```
 
-### Client
+## /v1/drink/:id GET
 
-#### /healthz
-Health endpoint, is the client running
-
-#### /v1/status
-Shows the F.A.R.M client status
-
+```json
 {
-    "status:":"idle|pouring",
-    "pumps": [
-        {
-            "no": 0
-            "status": "idle|pouring",
-            "liquid": "jægermeister",
-            "rate": "100",
-        },
-        {
-            "no": 1
-            "status": "idle|pouring",
-            "liquid": "jægermeister",
-            "rate": "100",
-        }
-        ...
-    ]
+  "id": 1,
+  "drink_name": "Rom&Rolf",
+  "description": "För en mer traditionell fylla",
+  "url": "http://qty.se",
+  "Ingredients": [
+    {
+      "id": 1,
+      "liquid_name": "Rolf",
+      "liquid_id": 2,
+      "volume": 33
+    },
+    {
+      "id": 2,
+      "liquid_name": "Rom",
+      "liquid_id": 1,
+      "volume": 3
+    }
+  ]
 }
+```
 
-#### /v1/ingredients
+## /v1/liquid/:id GET
+
+```json
 {
-    "liquid": [
-        {
-            "name": "jægermesiter",
-            "type": "soda|spiritus|other
-            "description": "Kittlar dödsskönt i kistan",
-            "pump": 0,
-            "rate": 1400, # Pour rate, milliseconds per centiliter
-        },
-        {
-            "name": "cola",
-            "type": "soda|spiritus|other
-            "description": "Kittlar dödsskönt i kistan",
-            "pump": 1,
-            "rate": 100, # Pour rate, milliseconds per centiliter
-        }
-        ...
-    ]
-
+  "id": 1,
+  "name": "Rom"
 }
+```
 
+## /v1/liquids GET
 
-### Server
+```json
+[
+  {
+    "id": 1,
+    "name": "Rom",
+    "url": "http://qty.se"
+  },
+  {
+    "id": 2,
+    "name": "Rolf",
+    "url": "http://qty.se"
+  },
+  {
+    "id": 3,
+    "name": "Gin",
+    "url": "http://qty.se"
+  },
+  {
+    "id": 4,
+    "name": "Tonic",
+    "url": "http://qty.se"
+  }
+]
+```

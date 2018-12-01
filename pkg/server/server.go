@@ -3,11 +3,11 @@ package server
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"sync"
 
+	// Apparently the way to do it
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/mux"
 	rpio "github.com/stianeikeland/go-rpio"
@@ -19,6 +19,7 @@ import (
 type FarmServer struct {
 	ListenPort uint16
 	Status     Status
+	RpiHW      bool
 	DB         *sql.DB
 	Config     *ini.File
 	Relay1     rpio.Pin
@@ -36,28 +37,8 @@ type pourResponse struct {
 }
 
 func (server *FarmServer) healthz(w http.ResponseWriter, r *http.Request) {
-	return
-}
-
-func (server *FarmServer) getingredients(drinkID int) []drinks.DrinkIngredient {
-	var ingredients []drinks.DrinkIngredient
-	results, err := server.DB.Query("SELECT id, drink_id, liquid_id, volume FROM drink_ingredients WHERE drink_id = ?", drinkID)
-	if err != nil {
-		panic(err.Error()) // proper error handling instead of panic in your app
-	}
-	defer results.Close()
-	for results.Next() {
-		var ingredient drinks.DrinkIngredient
-		// for each row, scan the result into our tag composite object
-		err = results.Scan(&ingredient.ID, &ingredient.DrinkID, &ingredient.LiquidID, &ingredient.Volume)
-		if err != nil {
-			panic(err.Error()) // proper error handling instead of panic in your app
-		} else {
-			ingredients = append(ingredients, ingredient)
-		}
-		// and then print out the tag's Name attribute
-	}
-	return ingredients
+	w.WriteHeader(200)
+	fmt.Fprint(w, "Ok\n")
 }
 
 func (server *FarmServer) pumpStatus(w http.ResponseWriter, r *http.Request) {
@@ -71,15 +52,17 @@ type drinkInfo struct {
 
 //Run starts the server
 func (server *FarmServer) Run() error {
-	defer rpio.Close()
-	if err := rpio.Open(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+	if server.RpiHW {
+		defer rpio.Close()
+
+		if err := rpio.Open(); err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+
+		server.Relay1 = rpio.Pin(18)
+		server.Relay1.Output()
 	}
-
-	server.Relay1 = rpio.Pin(18)
-	server.Relay1.Output()
-
 	db, err := sql.Open("mysql", server.getDSN())
 	server.DB = db
 	if err != nil {
@@ -94,16 +77,26 @@ func (server *FarmServer) Run() error {
 	}
 
 	router := mux.NewRouter()
-	router.HandleFunc("/v1/drinkid/{id}", server.getDrink).Methods("GET")
+
+	router.HandleFunc("/v1/categories", server.getCategories).Methods("GET", "POST")
+	router.HandleFunc("/v1/drinks", server.getDrinks).Methods("GET", "POST")
+	router.HandleFunc("/v1/drink/{id}", server.getDrink).Methods("GET", "POST")
+	router.HandleFunc("/v1/liquids", server.getLiquids).Methods("GET")
+	router.HandleFunc("/v1/liquid/{id}", server.getLiquid).Methods("GET", "POST")
+	router.HandleFunc("/v1/pour/{id}", server.pour).Methods("GET", "POST")
 	router.HandleFunc("/healthz", server.healthz).Methods("GET")
-	router.HandleFunc("/v1/pour/{id}", server.pour).Methods("GET")
 	router.HandleFunc("/v1/status/pump/{pump}", server.pumpStatus).Methods("GET")
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", server.ListenPort), router))
-	return nil
+
+	return http.ListenAndServe(fmt.Sprintf(":%d", server.ListenPort), router)
 }
 
 // NewServer new farm pouring client
 func NewServer() *FarmServer {
+	rpi := false
+	if _, err := os.Stat("/dev/mem"); !os.IsNotExist(err) {
+		rpi = true
+	}
+
 	cfg, err := ini.Load("./config.ini")
 	if err != nil {
 		fmt.Printf("Fail to read file: %v", err)
@@ -112,5 +105,6 @@ func NewServer() *FarmServer {
 	return &FarmServer{
 		ListenPort: 8000,
 		Config:     cfg,
+		RpiHW:      rpi,
 	}
 }
