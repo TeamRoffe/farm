@@ -107,3 +107,22 @@ This document defines the endpoint responses and format
   "message": "Pouring drink ID 1"
 }
 ```
+
+## /v1/ports GET
+
+```json
+[
+  {
+    "Pin": 18,
+    "LiquidID": 1
+  },
+  {
+    "Pin": 22,
+    "LiquidID": 2
+  },
+  {
+    "Pin": 26,
+    "LiquidID": 3
+  }
+]
+```

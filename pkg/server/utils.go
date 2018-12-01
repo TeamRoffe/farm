@@ -3,25 +3,26 @@ package server
 import (
 	"fmt"
 
+	"github.com/golang/glog"
 	"github.com/teamroffe/farm/pkg/drinks"
 )
 
-func (server *FarmServer) getingredients(drinkID int) ([]drinks.DrinkIngredient, error) {
-	var ingredients []drinks.DrinkIngredient
-	results, err := server.DB.Query("select drink_ingredients.id as ingredient_id, drinks.id as drink_id, liquids.liquid_name, drink_ingredients.liquid_id, drink_ingredients.volume from drinks left join drink_ingredients on drinks.id = drink_ingredients.drink_id left join liquids on liquids.id = drink_ingredients.liquid_id where drinks.id = ?;", drinkID)
-	if err != nil {
-		return ingredients, err
-	}
-	defer results.Close()
-	for results.Next() {
-		var ingredient drinks.DrinkIngredient
-		err = results.Scan(&ingredient.ID, &ingredient.DrinkID, &ingredient.LiquidName, &ingredient.LiquidID, &ingredient.Volume)
-		if err != nil {
-			return ingredients, err
+func (server *FarmServer) hasLiquids(ingredients []*drinks.DrinkIngredient) error {
+	var found bool
+	for _, ingr := range ingredients {
+		found = false
+		for _, port := range server.PM.Ports {
+			if *port.LiquidID == *ingr.LiquidID {
+				glog.Infof("We got liquid %d localy", *ingr.LiquidID)
+				found = true
+				continue
+			}
 		}
-		ingredients = append(ingredients, ingredient)
+		if !found {
+			return fmt.Errorf("This F.A.R.M does not carry liquid %d", *ingr.LiquidID)
+		}
 	}
-	return ingredients, nil
+	return nil
 }
 
 func (server *FarmServer) getDSN() string {
