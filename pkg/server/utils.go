@@ -6,22 +6,22 @@ import (
 	"github.com/teamroffe/farm/pkg/drinks"
 )
 
-func (server *FarmServer) getingredients(drinkID int) (*[]drinks.DrinkIngredient, error) {
+func (server *FarmServer) getingredients(drinkID int) ([]drinks.DrinkIngredient, error) {
 	var ingredients []drinks.DrinkIngredient
-	results, err := server.DB.Query("select drink_ingredients.id as ingredient_id, liquids.liquid_name, drink_ingredients.liquid_id, drink_ingredients.volume from drinks left join drink_ingredients on drinks.id = drink_ingredients.drink_id left join liquids on liquids.id = drink_ingredients.liquid_id where drinks.id = ?;", drinkID)
+	results, err := server.DB.Query("select drink_ingredients.id as ingredient_id, drinks.id as drink_id, liquids.liquid_name, drink_ingredients.liquid_id, drink_ingredients.volume from drinks left join drink_ingredients on drinks.id = drink_ingredients.drink_id left join liquids on liquids.id = drink_ingredients.liquid_id where drinks.id = ?;", drinkID)
 	if err != nil {
-		return &ingredients, err
+		return ingredients, err
 	}
 	defer results.Close()
 	for results.Next() {
 		var ingredient drinks.DrinkIngredient
-		err = results.Scan(&ingredient.ID, &ingredient.LiquidName, &ingredient.LiquidID, &ingredient.Volume)
+		err = results.Scan(&ingredient.ID, &ingredient.DrinkID, &ingredient.LiquidName, &ingredient.LiquidID, &ingredient.Volume)
 		if err != nil {
-			return &ingredients, err
+			return ingredients, err
 		}
 		ingredients = append(ingredients, ingredient)
 	}
-	return &ingredients, nil
+	return ingredients, nil
 }
 
 func (server *FarmServer) getDSN() string {

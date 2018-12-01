@@ -2,13 +2,14 @@ package server
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/cloudflare/cfssl/log"
 	"github.com/gorilla/mux"
 	"github.com/teamroffe/farm/pkg/drinks"
+	"github.com/teamroffe/farm/pkg/pumps"
 )
 
 func (server *FarmServer) handleLiquid(w http.ResponseWriter, r *http.Request) {
@@ -32,12 +33,17 @@ func (server *FarmServer) handleLiquid(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(liquids)
 	} else {
 		var liquid drinks.Liquid
-		liquidID, err := strconv.Atoi(params["id"])
+		err := server.DB.QueryRow("SELECT id, liquid_name FROM liquids WHERE id = ?", params["id"]).Scan(&liquid.ID, &liquid.Name)
 		if err != nil {
-			panic(err.Error()) // proper error handling instead of panic in your app
-		}
-		err = server.DB.QueryRow("SELECT id, liquid_name FROM liquids WHERE id = ?", liquidID).Scan(&liquid.ID, &liquid.Name)
-		if err != nil {
+			if err.Error() == "sql: no rows in result set" {
+				w.WriteHeader(404)
+				resp := &farmResponse{
+					Status:  404,
+					Message: "Liquid not found",
+				}
+				json.NewEncoder(w).Encode(resp)
+				return
+			}
 			panic(err.Error()) // proper error handling instead of panic in your app
 		}
 
@@ -72,7 +78,15 @@ func (server *FarmServer) handleDrink(w http.ResponseWriter, r *http.Request) {
 	if params["id"] != "" {
 		var drink drinks.Drink
 		params := mux.Vars(r)
-		drinkID, _ := strconv.Atoi(params["id"])
+		drinkID, err := strconv.Atoi(params["id"])
+		if err != nil {
+			resp := &farmResponse{
+				Status:  503,
+				Message: err.Error(),
+			}
+			json.NewEncoder(w).Encode(resp)
+			panic(err)
+		}
 		stmtOut, err := server.DB.Prepare("SELECT id, drink_name, description, url FROM drinks WHERE id = ? LIMIT 1")
 		if err != nil {
 			panic(err)
@@ -82,7 +96,7 @@ func (server *FarmServer) handleDrink(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			if err.Error() == "sql: no rows in result set" {
 				w.WriteHeader(404)
-				resp := &pourResponse{
+				resp := &farmResponse{
 					Status:  404,
 					Message: "Drink not found",
 				}
@@ -90,7 +104,7 @@ func (server *FarmServer) handleDrink(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			w.WriteHeader(500)
-			resp := &pourResponse{
+			resp := &farmResponse{
 				Status:  500,
 				Message: err.Error(),
 			}
@@ -108,7 +122,7 @@ func (server *FarmServer) handleDrink(w http.ResponseWriter, r *http.Request) {
 			Name:        drink.Name,
 			Description: drink.Description,
 			URL:         drink.URL,
-			Ingredients: ingredients,
+			Ingredients: &ingredients,
 		}
 
 		json.NewEncoder(w).Encode(resp)
@@ -145,9 +159,23 @@ type drinkResponse struct {
 	Ingredients *[]drinks.DrinkIngredient
 }
 
+func (server *FarmServer) pourON() {
+	server.Status.mux.Lock()
+	server.Status.Pouring = true
+	server.Status.mux.Unlock()
+}
+
+func (server *FarmServer) pourOFF() {
+	server.Status.mux.Lock()
+	server.Status.Pouring = false
+	server.Status.mux.Unlock()
+}
+
 func (server *FarmServer) pour(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+
 	if server.Status.Pouring {
-		resp := &pourResponse{
+		resp := &farmResponse{
 			Status:  509,
 			Message: "Pouring limit exceeded, please try again",
 		}
@@ -155,28 +183,39 @@ func (server *FarmServer) pour(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	params := mux.Vars(r)
-
-	server.Status.mux.Lock()
-	defer server.Status.mux.Unlock()
-	server.Status.Pouring = true
-	server.Status.mux.Unlock()
-
-	if server.RpiHW {
-		server.Relay1.High()
-		time.Sleep(5000 * time.Millisecond)
-		server.Relay1.Low()
+	drinkID, err := strconv.Atoi(params["id"])
+	if err != nil {
+		resp := &farmResponse{
+			Status:  509,
+			Message: err.Error(),
+		}
+		json.NewEncoder(w).Encode(resp)
+		return
 	}
-	message := fmt.Sprintf("pouring id %s", params["id"])
 
-	resp := &pourResponse{
+	resp, err := server.getingredients(drinkID)
+	if err != nil {
+		panic(err)
+	}
+	for _, liquid := range resp {
+		log.Infof("Pouring ingredient ID: %d DrinkID: %d LiquidID: %d LiquidName: %s Volume: %d\n", *liquid.ID, *liquid.DrinkID, *liquid.LiquidID, *liquid.LiquidName, *liquid.Volume)
+		go func(liq drinks.DrinkIngredient) {
+			server.pourON()
+			duration := time.Duration(int64(time.Second) * int64(*liq.Volume))
+			job := &pumps.PumpMSG{
+				Port: 18,
+				Time: duration,
+			}
+			server.PM.Queue <- job
+			server.pourOFF()
+		}(liquid)
+	}
+
+	respo := &farmResponse{
 		Status:  200,
-		Message: message,
+		Message: "Pouring started",
 	}
 
-	json.NewEncoder(w).Encode(resp)
-
-	server.Status.mux.Lock()
-	server.Status.Pouring = false
+	json.NewEncoder(w).Encode(respo)
 
 }

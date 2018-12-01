@@ -98,3 +98,12 @@ This document defines the endpoint responses and format
   "name": "Rom"
 }
 ```
+
+## /v1/pour/:id GET
+
+```json
+{
+  "status": 200,
+  "message": "Pouring drink ID 1"
+}
+```

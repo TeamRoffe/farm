@@ -10,18 +10,17 @@ import (
 	// Apparently the way to do it
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/mux"
-	rpio "github.com/stianeikeland/go-rpio"
 	"github.com/teamroffe/farm/pkg/drinks"
+	"github.com/teamroffe/farm/pkg/pumps"
 	"gopkg.in/ini.v1"
 )
 
 // FarmServer our main webserver package
 type FarmServer struct {
 	Status Status
-	RpiHW  bool
 	DB     *sql.DB
 	Config *ini.File
-	Relay1 rpio.Pin
+	PM     *pumps.PumpManager
 }
 
 // Status holds F.A.R.M status
@@ -30,7 +29,7 @@ type Status struct {
 	Pouring bool
 }
 
-type pourResponse struct {
+type farmResponse struct {
 	Status  int    `json:"status"`
 	Message string `json:"message"`
 }
@@ -51,17 +50,6 @@ type drinkInfo struct {
 
 //Run starts the server
 func (server *FarmServer) Run() error {
-	if server.RpiHW {
-		defer rpio.Close()
-
-		if err := rpio.Open(); err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
-
-		server.Relay1 = rpio.Pin(18)
-		server.Relay1.Output()
-	}
 	db, err := sql.Open("mysql", server.getDSN())
 	server.DB = db
 	if err != nil {
@@ -91,18 +79,20 @@ func (server *FarmServer) Run() error {
 
 // NewServer new farm pouring client
 func NewServer() *FarmServer {
-	rpi := false
-	if _, err := os.Stat("/dev/mem"); !os.IsNotExist(err) {
-		rpi = true
-	}
 
 	cfg, err := ini.Load("./config.ini")
 	if err != nil {
 		fmt.Printf("Fail to read file: %v", err)
 		os.Exit(1)
 	}
+	pm, err := pumps.NewPumpManager()
+	if err != nil {
+		panic(err)
+	}
+	go pm.Run()
+
 	return &FarmServer{
+		PM:     pm,
 		Config: cfg,
-		RpiHW:  rpi,
 	}
 }
