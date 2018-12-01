@@ -35,8 +35,8 @@ func main() {
 
 	go func() {
 		sig := <-gracefulStop
-		glog.Infof("Caught sig: %+v Wait to finish processing", sig)
-		server.Stop()
+		glog.Infof("Caught sig: %+v, finish processing", sig)
+		server.Stop(sig)
 	}()
 
 	err := server.Run()

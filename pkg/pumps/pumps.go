@@ -25,7 +25,7 @@ type PumpManager struct {
 	Ports    []*pumpPort
 	Queue    chan *PumpMSG
 	RpiHW    bool
-	quitChan chan bool
+	quitChan chan os.Signal
 }
 
 //pumpPort holds what pin on the pi a specific beverage sits
@@ -55,7 +55,7 @@ func NewPumpManager(cfg *ini.File) (*PumpManager, error) {
 
 //Run starts the pumpmanager
 func (pm *PumpManager) Run() error {
-	pm.quitChan = make(chan bool)
+	pm.quitChan = make(chan os.Signal)
 	jobDone := make(chan *int)
 	defer close(jobDone)
 
@@ -97,12 +97,13 @@ func (pm *PumpManager) Run() error {
 		}
 	}
 	defer glog.Info("PM exited")
+
 	for {
 		select {
 		case message := <-pm.Queue:
 			go pm.pour(message, jobDone)
 		case ch := <-jobDone:
-			glog.Infof("Done liquid: %d", *ch)
+			glog.Infof("Done po liquid: %d", *ch)
 		case <-pm.quitChan:
 			glog.Info("Stopping pump manager")
 			return nil
@@ -111,15 +112,15 @@ func (pm *PumpManager) Run() error {
 }
 
 //Stop the pumpmanager
-func (pm *PumpManager) Stop() {
-	pm.quitChan <- false
+func (pm *PumpManager) Stop(sig os.Signal) {
+	pm.quitChan <- sig
 	close(pm.quitChan)
 }
 
 //pour handles the port controll of the rpi
 func (pm *PumpManager) pour(job *PumpMSG, done chan<- *int) error {
 	defer close(job.Done)
-	glog.Infof("PM Pour: %d %s", *job.LiquidID, job.Time)
+	glog.Infof("pouring: %d %s", *job.LiquidID, job.Time)
 	for _, port := range pm.Ports {
 		if *port.LiquidID == *job.LiquidID {
 			port.Pin.High()

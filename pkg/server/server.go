@@ -23,7 +23,7 @@ type FarmServer struct {
 	DB       *sql.DB
 	Config   *ini.File
 	PM       *pumps.PumpManager
-	stopChan chan bool
+	stopChan chan os.Signal
 }
 
 //Status holds F.A.R.M status
@@ -37,12 +37,6 @@ type Status struct {
 type farmResponse struct {
 	Status  int    `json:"status"`
 	Message string `json:"message"`
-}
-
-//drinkInfo
-type drinkInfo struct {
-	Info        *drinks.Drink             `json:"info"`
-	Ingredients *[]drinks.DrinkIngredient `json:"ingredients"`
 }
 
 //drinkResponse is the response format for /v1/drink/:id
@@ -77,9 +71,9 @@ func (server *FarmServer) pourOFF() {
 }
 
 //Stop the F.A.R.M server
-func (server *FarmServer) Stop() {
+func (server *FarmServer) Stop(sig os.Signal) {
 	defer close(server.stopChan)
-	server.stopChan <- false
+	server.stopChan <- sig
 }
 
 //Run starts the server
@@ -122,15 +116,17 @@ func (server *FarmServer) Run() error {
 		}
 	}()
 
-	<-server.stopChan
-	server.PM.Stop()
+	sig := <-server.stopChan
+	server.PM.Stop(sig)
+
 	wg.Wait()
 	return nil
 }
 
 // NewServer new farm pouring client
 func NewServer() *FarmServer {
-	var gracefulStop = make(chan bool)
+	var gracefulStop = make(chan os.Signal)
+
 	//Load our config file
 	cfg, err := ini.Load("./config.ini")
 	if err != nil {

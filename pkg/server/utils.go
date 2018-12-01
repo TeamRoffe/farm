@@ -19,7 +19,7 @@ func (server *FarmServer) hasLiquids(ingredients []*drinks.DrinkIngredient) erro
 			}
 		}
 		if !found {
-			return fmt.Errorf("This F.A.R.M does not carry liquid %d", *ingr.LiquidID)
+			return fmt.Errorf("This F.A.R.M unit does not carry liquid %d", *ingr.LiquidID)
 		}
 	}
 	return nil
