@@ -17,12 +17,11 @@ import (
 
 // FarmServer our main webserver package
 type FarmServer struct {
-	ListenPort uint16
-	Status     Status
-	RpiHW      bool
-	DB         *sql.DB
-	Config     *ini.File
-	Relay1     rpio.Pin
+	Status Status
+	RpiHW  bool
+	DB     *sql.DB
+	Config *ini.File
+	Relay1 rpio.Pin
 }
 
 // Status holds F.A.R.M status
@@ -87,7 +86,7 @@ func (server *FarmServer) Run() error {
 	router.HandleFunc("/healthz", server.healthz).Methods("GET")
 	router.HandleFunc("/v1/status/pump/{pump}", server.pumpStatus).Methods("GET")
 
-	return http.ListenAndServe(fmt.Sprintf(":%d", server.ListenPort), router)
+	return http.ListenAndServe(fmt.Sprintf(":%s", server.Config.Section("server").Key("http_port").String()), router)
 }
 
 // NewServer new farm pouring client
@@ -103,8 +102,7 @@ func NewServer() *FarmServer {
 		os.Exit(1)
 	}
 	return &FarmServer{
-		ListenPort: 8000,
-		Config:     cfg,
-		RpiHW:      rpi,
+		Config: cfg,
+		RpiHW:  rpi,
 	}
 }
