@@ -3,9 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"math/rand"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/teamroffe/farm/pkg/server"
@@ -18,6 +20,7 @@ func usage() {
 }
 
 func init() {
+	rand.Seed(time.Now().Unix())
 	flag.Usage = usage
 	flag.Set("logtostderr", "true")
 	flag.Parse()

@@ -43,6 +43,7 @@ type farmResponse struct {
 type drinkResponse struct {
 	ID          *int    `json:"id"`
 	Name        *string `json:"drink_name"`
+	Category    *int    `json:"category"`
 	Description *string `json:"description"`
 	URL         *string `json:"url"`
 	Ingredients []*drinks.DrinkIngredient
@@ -116,11 +117,20 @@ func (server *FarmServer) Run() error {
 		}
 	}()
 
-	sig := <-server.stopChan
-	server.PM.Stop(sig)
-
-	wg.Wait()
-	return nil
+	for {
+		select {
+		case sig := <-server.stopChan:
+			server.PM.Stop(sig)
+			wg.Wait()
+			return nil
+		case <-time.After(10 * time.Second):
+			db.Ping()
+			err = db.Ping()
+			if err != nil {
+				glog.Error(err)
+			}
+		}
+	}
 }
 
 // NewServer new farm pouring client

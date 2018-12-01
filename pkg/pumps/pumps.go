@@ -103,7 +103,7 @@ func (pm *PumpManager) Run() error {
 		case message := <-pm.Queue:
 			go pm.pour(message, jobDone)
 		case ch := <-jobDone:
-			glog.Infof("Done po liquid: %d", *ch)
+			glog.Infof("Done pouring liquid: %d", *ch)
 		case <-pm.quitChan:
 			glog.Info("Stopping pump manager")
 			return nil
@@ -113,8 +113,12 @@ func (pm *PumpManager) Run() error {
 
 //Stop the pumpmanager
 func (pm *PumpManager) Stop(sig os.Signal) {
+	defer close(pm.quitChan)
+	for _, port := range pm.Ports {
+		glog.Infof("Pin %d => LOW", *port.Pin)
+		port.Pin.Low()
+	}
 	pm.quitChan <- sig
-	close(pm.quitChan)
 }
 
 //pour handles the port controll of the rpi

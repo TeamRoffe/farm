@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"strconv"
 	"sync"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/gorilla/mux"
+	htgotts "github.com/hegedustibor/htgo-tts"
 	"github.com/teamroffe/farm/pkg/drinks"
 	"github.com/teamroffe/farm/pkg/pumps"
 )
@@ -96,7 +98,7 @@ func (server *FarmServer) handleDrink(w http.ResponseWriter, r *http.Request) {
 			glog.Error(err.Error())
 			return
 		}
-		stmtOut, err := server.DB.Prepare("SELECT id, drink_name, description, url FROM drinks WHERE id = ? LIMIT 1")
+		stmtOut, err := server.DB.Prepare("SELECT id, drink_name, category, description, url FROM drinks WHERE id = ? LIMIT 1")
 		if err != nil {
 			resp := &farmResponse{
 				Status:  503,
@@ -107,7 +109,7 @@ func (server *FarmServer) handleDrink(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer stmtOut.Close()
-		err = stmtOut.QueryRow(drinkID).Scan(&drink.ID, &drink.Name, &drink.Description, &drink.URL)
+		err = stmtOut.QueryRow(drinkID).Scan(&drink.ID, &drink.Name, &drink.Category, &drink.Description, &drink.URL)
 		if err != nil {
 			if err.Error() == "sql: no rows in result set" {
 				w.WriteHeader(404)
@@ -141,6 +143,7 @@ func (server *FarmServer) handleDrink(w http.ResponseWriter, r *http.Request) {
 		resp := &drinkResponse{
 			ID:          drink.ID,
 			Name:        drink.Name,
+			Category:    drink.Category,
 			Description: drink.Description,
 			URL:         drink.URL,
 			Ingredients: ingredients,
@@ -148,7 +151,7 @@ func (server *FarmServer) handleDrink(w http.ResponseWriter, r *http.Request) {
 
 		json.NewEncoder(w).Encode(resp)
 	} else {
-		var drinkList []drinks.Drink
+		var drinkList []drinkResponse
 
 		results, err := server.DB.Query("SELECT id, drink_name, url, category, description FROM drinks")
 		if err != nil {
@@ -157,19 +160,44 @@ func (server *FarmServer) handleDrink(w http.ResponseWriter, r *http.Request) {
 		}
 		defer results.Close()
 		for results.Next() {
-			var drink drinks.Drink
+			var drink drinkResponse
 
 			err = results.Scan(&drink.ID, &drink.Name, &drink.URL, &drink.Category, &drink.Description)
 			if err != nil {
 				glog.Error(err.Error())
 				return
 			}
+			ingredients, err := server.getingredients(*drink.ID)
+			if err != nil {
+				resp := &farmResponse{
+					Status:  503,
+					Message: err.Error(),
+				}
+				json.NewEncoder(w).Encode(resp)
+				glog.Error(err.Error())
+				return
+			}
+			drink.Ingredients = ingredients
 			drinkList = append(drinkList, drink)
-
 		}
+
 		json.NewEncoder(w).Encode(drinkList)
+
 		return
 	}
+}
+
+var reasons = []string{
+	"Le om du tar den i tvåan",
+	"Roffe vad håller du på med",
+	"Göm spriten, Lindmark kommer!",
+	"Här vare snepatchat",
+	"Bosse!",
+	"Roffe!",
+	"Har det hänt en grej?",
+	"Jag ser dig i spegeln!",
+	"Tvi tvi tvi. Jag spottar vart jag vill",
+	"Vem fan har hällt sprit på bastuaggregatet!?",
 }
 
 //handleOur handles /v1/pour/:id
@@ -226,27 +254,30 @@ func (server *FarmServer) handlePour(w http.ResponseWriter, r *http.Request) {
 
 	var wg sync.WaitGroup
 
+	server.pourON()
+	speech := htgotts.Speech{Folder: "audio", Language: "sv"}
+	message := fmt.Sprint(reasons[rand.Intn(len(reasons))])
+	go speech.Speak(message)
+
 	go func() {
-		server.pourON()
-		defer server.pourOFF()
 		for _, liquid := range resp {
 			wg.Add(1)
 			glog.Infof("Pouring ingredient ID: %d DrinkID: %d LiquidID: %d LiquidName: %s Volume: %d\n", *liquid.ID, *liquid.DrinkID, *liquid.LiquidID, *liquid.LiquidName, *liquid.Volume)
-			go func(liq *drinks.DrinkIngredient) {
+			go func(liquid *drinks.DrinkIngredient) {
 				defer wg.Done()
 				done := make(chan bool)
-				duration := time.Duration(int64(time.Second) * int64(*liq.Volume))
+				duration := time.Duration(int64(time.Second) * int64(*liquid.Volume))
 				job := &pumps.PumpMSG{
-					LiquidID: liq.LiquidID,
+					LiquidID: liquid.LiquidID,
 					Time:     duration,
 					Done:     done,
 				}
 				server.PM.Queue <- job
 				<-done
-
 			}(liquid)
 		}
 		wg.Wait()
+		server.pourOFF()
 	}()
 
 	respo := &farmResponse{
