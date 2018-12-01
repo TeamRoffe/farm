@@ -63,15 +63,6 @@ This document defines the endpoint responses and format
 }
 ```
 
-## /v1/liquid/:id GET
-
-```json
-{
-  "id": 1,
-  "name": "Rom"
-}
-```
-
 ## /v1/liquids GET
 
 ```json
@@ -97,4 +88,13 @@ This document defines the endpoint responses and format
     "url": "http://qty.se"
   }
 ]
+```
+
+## /v1/liquid/:id GET
+
+```json
+{
+  "id": 1,
+  "name": "Rom"
+}
 ```
