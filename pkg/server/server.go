@@ -3,8 +3,10 @@ package server
 import (
 	"database/sql"
 	"fmt"
+	"html/template"
 	"net/http"
 	"os"
+	"path"
 	"sync"
 	"time"
 
@@ -33,10 +35,10 @@ type Status struct {
 	LastPour *time.Time
 }
 
-// farmResponse is the generic response message type
+// farmResponse is the generic response message format
 type farmResponse struct {
-	Status  int    `json:"status"`
-	Message string `json:"message"`
+	Status  *int    `json:"status"`
+	Message *string `json:"message,omitempty"`
 }
 
 //drinkResponse is the response format for /v1/drink/:id
@@ -77,6 +79,25 @@ func (server *FarmServer) Stop(sig os.Signal) {
 	server.stopChan <- sig
 }
 
+type indexTMPL struct {
+	Name    string
+	Version string
+}
+
+func handleIndex(w http.ResponseWriter, r *http.Request) {
+	profile := indexTMPL{"F.A.R.M", "0.0.1"}
+	fp := path.Join("templates", "index.html")
+	tmpl, err := template.ParseFiles(fp)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := tmpl.Execute(w, profile); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
 //Run starts the server
 func (server *FarmServer) Run() error {
 	db, err := sql.Open("mysql", server.getDSN())
@@ -103,6 +124,7 @@ func (server *FarmServer) Run() error {
 	router := mux.NewRouter()
 
 	//add our HTTP routes
+	router.HandleFunc("/", handleIndex).Methods("GET")
 	router.HandleFunc("/v1/categories", server.getCategories).Methods("GET", "POST")
 	router.HandleFunc("/v1/drinks", server.handleDrink).Methods("GET")
 	router.HandleFunc("/v1/drink/{id}", server.handleDrink).Methods("GET", "POST")
@@ -111,6 +133,7 @@ func (server *FarmServer) Run() error {
 	router.HandleFunc("/v1/pour/{id}", server.handlePour).Methods("GET", "POST")
 	router.HandleFunc("/healthz", server.handleHealthz).Methods("GET")
 	router.HandleFunc("/v1/ports", server.handlePorts).Methods("GET")
+
 	go func() {
 		if err := http.ListenAndServe(fmt.Sprintf(":%s", server.Config.Section("server").Key("http_port").String()), router); err != nil {
 			glog.Fatal(err)
@@ -123,9 +146,10 @@ func (server *FarmServer) Run() error {
 			server.PM.Stop(sig)
 			wg.Wait()
 			return nil
-		case <-time.After(10 * time.Second):
+		case <-time.After(1 * time.Minute):
 			db.Ping()
 			err = db.Ping()
+			glog.V(2).Info("DB Ping")
 			if err != nil {
 				glog.Error(err)
 			}

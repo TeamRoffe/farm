@@ -57,10 +57,11 @@ func NewPumpManager(cfg *ini.File) (*PumpManager, error) {
 func (pm *PumpManager) Run() error {
 	pm.quitChan = make(chan os.Signal)
 	jobDone := make(chan *int)
+
 	defer close(jobDone)
 
 	if pm.RpiHW {
-		glog.Info("Running on rpi hardware")
+		glog.Info("Running on RPi hardware")
 		defer rpio.Close()
 
 		if err := rpio.Open(); err != nil {
@@ -96,6 +97,7 @@ func (pm *PumpManager) Run() error {
 
 		}
 	}
+
 	defer glog.Info("PM exited")
 
 	for {

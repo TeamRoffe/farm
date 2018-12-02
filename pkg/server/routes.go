@@ -1,6 +1,7 @@
 package server
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -19,43 +20,31 @@ import (
 //handleLiquid handles /v1/liquids & /v1/liquid/:id
 func (server *FarmServer) handleLiquid(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
+	var err error
+	var results *sql.Rows
 	if params["id"] == "" {
-		var liquids []drinks.Liquid
-		results, err := server.DB.Query("SELECT id, liquid_name, url FROM liquids")
-		if err != nil {
-			glog.Error(err.Error())
-			return
-		}
-		defer results.Close()
-		for results.Next() {
-			var liquid drinks.Liquid
-			err = results.Scan(&liquid.ID, &liquid.Name, &liquid.URL)
-			if err != nil {
-				glog.Error(err.Error())
-				return
-			}
-			liquids = append(liquids, liquid)
-
-		}
-		json.NewEncoder(w).Encode(liquids)
+		results, err = server.DB.Query("SELECT id, liquid_name, url FROM liquids")
 	} else {
+		results, err = server.DB.Query("SELECT id, liquid_name, url FROM liquids WHERE id = ?", params["id"])
+	}
+	var liquids []drinks.Liquid
+	if err != nil {
+		glog.Error(err.Error())
+		return
+	}
+	defer results.Close()
+	for results.Next() {
 		var liquid drinks.Liquid
-		err := server.DB.QueryRow("SELECT id, liquid_name FROM liquids WHERE id = ?", params["id"]).Scan(&liquid.ID, &liquid.Name)
+		err = results.Scan(&liquid.ID, &liquid.Name, &liquid.URL)
 		if err != nil {
-			if err.Error() == "sql: no rows in result set" {
-				w.WriteHeader(404)
-				resp := &farmResponse{
-					Status:  404,
-					Message: "Liquid not found",
-				}
-				json.NewEncoder(w).Encode(resp)
-				return
-			}
 			glog.Error(err.Error())
 			return
 		}
-		json.NewEncoder(w).Encode(liquid)
+		liquids = append(liquids, liquid)
+
 	}
+	json.NewEncoder(w).Encode(liquids)
+
 	return
 }
 
@@ -85,106 +74,60 @@ func (server *FarmServer) getCategories(w http.ResponseWriter, r *http.Request) 
 //handleDink handles /v1/drinks & /v1/drink/:id
 func (server *FarmServer) handleDrink(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
-	if params["id"] != "" {
-		var drink drinks.Drink
-		params := mux.Vars(r)
-		drinkID, err := strconv.Atoi(params["id"])
-		if err != nil {
-			resp := &farmResponse{
-				Status:  503,
-				Message: err.Error(),
-			}
-			json.NewEncoder(w).Encode(resp)
-			glog.Error(err.Error())
-			return
-		}
-		stmtOut, err := server.DB.Prepare("SELECT id, drink_name, category, description, url FROM drinks WHERE id = ? LIMIT 1")
-		if err != nil {
-			resp := &farmResponse{
-				Status:  503,
-				Message: err.Error(),
-			}
-			json.NewEncoder(w).Encode(resp)
-			glog.Error(err.Error())
-			return
-		}
-		defer stmtOut.Close()
-		err = stmtOut.QueryRow(drinkID).Scan(&drink.ID, &drink.Name, &drink.Category, &drink.Description, &drink.URL)
-		if err != nil {
-			if err.Error() == "sql: no rows in result set" {
-				w.WriteHeader(404)
-				resp := &farmResponse{
-					Status:  404,
-					Message: "Drink not found",
-				}
-				json.NewEncoder(w).Encode(resp)
-				return
-			}
-			w.WriteHeader(500)
-			resp := &farmResponse{
-				Status:  500,
-				Message: err.Error(),
-			}
-			json.NewEncoder(w).Encode(resp)
-			return
-		}
 
-		ingredients, err := server.getingredients(drinkID)
-		if err != nil {
-			resp := &farmResponse{
-				Status:  503,
-				Message: err.Error(),
-			}
-			json.NewEncoder(w).Encode(resp)
-			glog.Error(err.Error())
-			return
-		}
+	var err error
+	var results *sql.Rows
+	var drinkList []drinkResponse
 
-		resp := &drinkResponse{
-			ID:          drink.ID,
-			Name:        drink.Name,
-			Category:    drink.Category,
-			Description: drink.Description,
-			URL:         drink.URL,
-			Ingredients: ingredients,
-		}
-
-		json.NewEncoder(w).Encode(resp)
+	if params["id"] == "" {
+		results, err = server.DB.Query("SELECT id, drink_name, category, description, url FROM drinks")
 	} else {
-		var drinkList []drinkResponse
+		results, err = server.DB.Query("SELECT id, drink_name, category, description, url FROM drinks WHERE id = ? LIMIT 1", params["id"])
+	}
 
-		results, err := server.DB.Query("SELECT id, drink_name, url, category, description FROM drinks")
-		if err != nil {
-			glog.Error(err.Error())
-			return
-		}
-		defer results.Close()
-		for results.Next() {
-			var drink drinkResponse
-
-			err = results.Scan(&drink.ID, &drink.Name, &drink.URL, &drink.Category, &drink.Description)
-			if err != nil {
-				glog.Error(err.Error())
-				return
-			}
-			ingredients, err := server.getingredients(*drink.ID)
-			if err != nil {
-				resp := &farmResponse{
-					Status:  503,
-					Message: err.Error(),
-				}
-				json.NewEncoder(w).Encode(resp)
-				glog.Error(err.Error())
-				return
-			}
-			drink.Ingredients = ingredients
-			drinkList = append(drinkList, drink)
-		}
-
-		json.NewEncoder(w).Encode(drinkList)
-
+	if err != nil {
+		glog.Error(err.Error())
 		return
 	}
+
+	defer results.Close()
+
+	for results.Next() {
+		var drink drinkResponse
+		err = results.Scan(&drink.ID, &drink.Name, &drink.Category, &drink.Description, &drink.URL)
+		if err != nil {
+			glog.Error(err.Error())
+			return
+		}
+
+		ingredients, err := server.getingredients(*drink.ID)
+
+		if err != nil {
+			json.NewEncoder(w).Encode(farmResp(503, err.Error()))
+			glog.Error(err.Error())
+			return
+		}
+
+		drink.Ingredients = ingredients
+		drinkList = append(drinkList, drink)
+	}
+	if len(drinkList) == 0 {
+		json.NewEncoder(w).Encode(farmResp(404, "Drink not found"))
+		return
+	}
+
+	js, err := json.Marshal(drinkList)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(js)
+	/*
+		json.NewEncoder(w).Encode(drinkList)
+		return
+	*/
 }
 
 var reasons = []string{
@@ -205,50 +148,29 @@ func (server *FarmServer) handlePour(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 
 	if server.Status.Pouring || time.Since(*server.Status.LastPour) < 3*time.Second {
-		resp := &farmResponse{
-			Status:  509,
-			Message: "Pouring limit exceeded, please try again",
-		}
-		json.NewEncoder(w).Encode(resp)
+		json.NewEncoder(w).Encode(farmResp(509, "Pouring limit exceeded, please try again"))
 		return
 	}
 
 	drinkID, err := strconv.Atoi(params["id"])
 	if err != nil {
-		resp := &farmResponse{
-			Status:  503,
-			Message: err.Error(),
-		}
-		json.NewEncoder(w).Encode(resp)
+		json.NewEncoder(w).Encode(farmResp(503, err.Error()))
 		return
 	}
 	resp, err := server.getingredients(drinkID)
 	if err != nil {
-		respns := &farmResponse{
-			Status:  503,
-			Message: err.Error(),
-		}
-		json.NewEncoder(w).Encode(respns)
+		json.NewEncoder(w).Encode(farmResp(503, err.Error()))
 		return
 	}
 
 	if resp == nil {
-		msg := fmt.Sprintf("Drink not found")
-		respns := &farmResponse{
-			Status:  404,
-			Message: msg,
-		}
-		json.NewEncoder(w).Encode(respns)
+		json.NewEncoder(w).Encode(farmResp(404, "Drink not found"))
 		return
 	}
 
 	err = server.hasLiquids(resp)
 	if err != nil {
-		respns := &farmResponse{
-			Status:  409,
-			Message: err.Error(),
-		}
-		json.NewEncoder(w).Encode(respns)
+		json.NewEncoder(w).Encode(farmResp(409, err.Error()))
 		return
 	}
 
@@ -280,12 +202,7 @@ func (server *FarmServer) handlePour(w http.ResponseWriter, r *http.Request) {
 		server.pourOFF()
 	}()
 
-	respo := &farmResponse{
-		Status:  200,
-		Message: "Pouring started",
-	}
-
-	json.NewEncoder(w).Encode(respo)
+	json.NewEncoder(w).Encode(farmResp(200, "Pouring started"))
 }
 
 //getingredients fetches the ingredients for a specified drink by ID
